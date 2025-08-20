@@ -1,5 +1,5 @@
 ---
-title: "WCS MERMAID Benthic Cover Explore Visualizations"
+title: "WCS MERMAID Explore - Benthic Cover Visualizations"
 author: "Iain R. Caldwell"
 date: 08/19/2025
 format: 
@@ -313,6 +313,8 @@ benthicTimeSeriesPercBarplot <-
 # Visualize the plot
 benthicTimeSeriesPercBarplot
 ```
+
+------------------------------------------------------------------------
 
 ## Stacked Single Barplot - % cover by category (single survey)
 
