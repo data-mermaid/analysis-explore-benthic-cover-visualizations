@@ -1,0 +1,442 @@
+---
+title: "WCS MERMAID Benthic Cover Explore Visualizations"
+author: "Iain R. Caldwell"
+date: 08/19/2025
+format: 
+  html: #for website
+    embed-resources: true
+editor: visual
+code-fold: true
+code-summary: "Show the code"
+toc: true
+title-block-banner: "#f0f3f5"
+title-block-banner-color: "black"
+include-after-body: "footer.html"
+---
+
+This code provides examples of visualizations shown on [MERMAID Explore](https://explore.datamermaid.org/) that use data from one or more of the benthic protocols that collect information about the % cover of benthic categories (PIT, LIT, Photo Quadrat, and Bleaching surveys).
+
+------------------------------------------------------------------------
+
+## Getting summary sample event data from MERMAID
+
+The following code downloads summary sample event data from [MERMAID](https://datamermaid.org/) using the mermaidr package (documentation can be found at <https://data-mermaid.github.io/mermaidr/>). The summary sample events contain all surveys (i.e. sample events) that have permissions of "public summary" or "public".
+
+```{r}
+#| label: Load packages and download data
+#| warning: false
+rm(list = ls()) #remove past stored objects
+options(scipen = 999) #turn off scientific notation
+
+####  Load packages and libraries ####
+## If this is the first time using mermaidr, install the package through "remotes"
+# install.packages("remotes")
+# remotes::install_github("data-mermaid/mermaidr")
+# install.packages("tidyverse")
+# install.packages("plotly") 
+# install.packages("htmlwidgets")
+
+library(mermaidr) #package to download data from datamermaid.org
+library(tidyverse) #package that makes it easier to work with data
+library(plotly) #for interactive plotting
+library(htmlwidgets) #for saving plots at html files
+
+#### Get data from MERMAID for creating aggregate visualizations ####
+allMermaidSampEventsTBL <- mermaidr::mermaid_get_summary_sampleevents()
+```
+
+------------------------------------------------------------------------
+
+### Histogram - Hard coral cover (%) by survey
+
+This code creates a histogram showing the variability in % hard coral cover across surveys (sample events), with different colored bars for \<10% coral cover (net-negative carbonate production), \>10% but \<30% coral cover (net-positive carbonate production), and \>30% coral cover (maintains biodiversity, complexity, and fisheries production). It also includes code to show the total number of surveys (i.e. sample events in MERMAID) at the top of the plot. In the first step, we calculate average % hard coral cover for each survey across all four benthic protocols that measure % hard coral cover: benthic PIT, benthic LIT, benthic PQT, and bleaching surveys.
+
+```{r}
+#| label: Histogram - Hard coral cover % from summary sample events
+
+### Combine all benthic data - get averages across 4 protocols
+hardCoralTBL <- allMermaidSampEventsTBL %>% 
+  rowwise() %>% 
+  mutate(all_percent_cover_avg_Hard_coral =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Hard coral`,
+                  `benthiclit_percent_cover_benthic_category_avg_Hard coral`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Hard coral`,
+                  quadrat_benthic_percent_percent_hard_avg_avg), na.rm = T)) %>% 
+  ungroup() %>% 
+  filter(!is.na(all_percent_cover_avg_Hard_coral))
+
+# Create the histogram to get bin data to assign colors
+hist_data <- hist(hardCoralTBL$all_percent_cover_avg_Hard_coral,
+                  breaks = seq(0, 100, by = 2),
+                  plot = FALSE) #In this function a 4 will be in the first bin
+
+# Assign colors based on bin order
+bin_colors <- sapply(seq_along(hist_data$counts), function(i) {
+  if (i <= 5) {
+    return('#d13823')
+  } else if (i > 5 && i <= 15) {
+    return('#f3a224')
+  } else {
+    return('#277d1d')
+  }
+})
+
+# Create the histogram using plotly
+hardCoralAggHist <-
+  plot_ly(x = hardCoralTBL$all_percent_cover_avg_Hard_coral,
+          type = 'histogram',
+          xbins = list(start = 0, size = 2, end = 100),
+          marker = list(color = bin_colors), height = 450) %>%
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian', 'hoverCompareCartesian')) %>% 
+  layout(bargap = 0.1,
+         shapes = list(
+           list(type = "line", 
+                x0 = 10, x1 = 10, y0 = 0, y1 = 1, yref = "paper", 
+                line = list(color = "black", dash = "dot")),
+           list(type = "line", 
+                x0 = 30, x1 = 30, y0 = 0, y1 = 1, yref = "paper", 
+                line = list(color = "black", dash = "dot"))
+         ),
+         xaxis = list(title = "Hard coral cover (%)",
+                      linecolor = "black",
+                      linewidth = 2,
+                      tickvals = seq(0, 100, by = 10),  # Set x-axis tick values
+                      ticktext = seq(0, 100, by = 10)),
+         yaxis = list(title = "Number of surveys",
+                      linecolor = "black",   # Set the y-axis line color to black
+                      linewidth = 2),
+         annotations = list(
+           list(x = 0, y = 1.15, text = "HARD CORAL COVER", showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = 0, y = 1.08,
+                text = paste0(length(hardCoralTBL$all_percent_cover_avg_Hard_coral),
+                             " Surveys"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         margin = list(t = 50, b = 75)) %>%  # Increase top margin to create more space for title and subtitle
+  style(hovertemplate = "Bin: %{x}%<br>%{y} surveys<extra></extra>") 
+
+# Visualize the plot
+hardCoralAggHist
+```
+
+------------------------------------------------------------------------
+
+## Time series - Benthic cover (%) by year and category
+
+Stacked barplot showing the percent cover (y-axis) by year (x-axis) for each of 11 high-level benthic categories: Hard coral, Bare substrate, Crustose coralline algae, Rubble, Cyanobacteria, Seagrass, Sand, Macroalgae, Turf algae, Soft coral, Other invertebrates. In the first step, average % cover is calculated for each of the 11 categories across the three benthic protocols that collect data for those categories (benthic PIT, benthic LIT, benthic PQT).
+
+```{r}
+#| label: Time series - % benthic cover by year and category
+#| warning: false
+
+### Get average % cover for 11 broad categories across three survey protocols
+benthicAvgTBL <- allMermaidSampEventsTBL %>% 
+  rowwise() %>% 
+  mutate(all_percent_cover_avg_Hard_coral =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Hard coral`,
+                  `benthiclit_percent_cover_benthic_category_avg_Hard coral`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Hard coral`),
+                na.rm = T),
+         all_percent_cover_avg_Bare_substrate =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Bare substrate`,
+                  `benthiclit_percent_cover_benthic_category_avg_Bare substrate`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Bare substrate`),
+                na.rm = T),
+         all_percent_cover_avg_Crustose_coralline_algae =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Crustose coralline algae`,
+                  `benthiclit_percent_cover_benthic_category_avg_Crustose coralline algae`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Crustose coralline algae`),
+                na.rm = T),
+         all_percent_cover_avg_Rubble =
+           mean(c(benthicpit_percent_cover_benthic_category_avg_Rubble,
+                  benthiclit_percent_cover_benthic_category_avg_Rubble,
+                  benthicpqt_percent_cover_benthic_category_avg_Rubble),
+                na.rm = T),
+         all_percent_cover_avg_Cyanobacteria =
+           mean(c(benthicpit_percent_cover_benthic_category_avg_Cyanobacteria,
+                  benthiclit_percent_cover_benthic_category_avg_Cyanobacteria,
+                  benthicpqt_percent_cover_benthic_category_avg_Cyanobacteria),
+                na.rm = T),
+         all_percent_cover_avg_Seagrass =
+           mean(c(benthicpit_percent_cover_benthic_category_avg_Seagrass,
+                  benthiclit_percent_cover_benthic_category_avg_Seagrass,
+                  benthicpqt_percent_cover_benthic_category_avg_Seagrass),
+                na.rm = T),
+         all_percent_cover_avg_Sand =
+           mean(c(benthicpit_percent_cover_benthic_category_avg_Sand,
+                  benthiclit_percent_cover_benthic_category_avg_Sand,
+                  benthicpqt_percent_cover_benthic_category_avg_Sand),
+                na.rm = T),
+         all_percent_cover_avg_Macroalgae =
+           mean(c(benthicpit_percent_cover_benthic_category_avg_Macroalgae,
+                  benthiclit_percent_cover_benthic_category_avg_Macroalgae,
+                  benthicpqt_percent_cover_benthic_category_avg_Macroalgae),
+                na.rm = T),
+         all_percent_cover_avg_Turf_algae =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Turf algae`,
+                  `benthiclit_percent_cover_benthic_category_avg_Turf algae`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Turf algae`),
+                na.rm = T),
+         all_percent_cover_avg_Soft_coral =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Soft coral`,
+                  `benthiclit_percent_cover_benthic_category_avg_Soft coral`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Soft coral`),
+                na.rm = T),
+         all_percent_cover_avg_Other_invertebrates =
+           mean(c(`benthicpit_percent_cover_benthic_category_avg_Other invertebrates`,
+                  `benthiclit_percent_cover_benthic_category_avg_Other invertebrates`,
+                  `benthicpqt_percent_cover_benthic_category_avg_Other invertebrates`),
+                na.rm = T),
+         all_percent_cover_sample_unit_count = 
+           sum(c(benthicpit_sample_unit_count,
+                 benthiclit_sample_unit_count,
+                 benthicpqt_sample_unit_count),
+               na.rm = T)) %>%  
+  ungroup() %>% 
+  mutate(year = year(sample_date)) %>% 
+  filter(all_percent_cover_sample_unit_count > 0)
+
+benthicSummYearCatTBL <- benthicAvgTBL %>% 
+  group_by(year) %>% 
+  summarise(
+    Avg_Hard_coral = mean(all_percent_cover_avg_Hard_coral,
+                        na.rm = T),
+    Avg_Bare_substrate = mean(all_percent_cover_avg_Bare_substrate,
+                              na.rm = T),
+    Avg_Crustose_coralline_algae = mean(all_percent_cover_avg_Crustose_coralline_algae,
+                                        na.rm = T),
+    Avg_Rubble = mean(all_percent_cover_avg_Rubble,
+                      na.rm = T),
+    Avg_Cyanobacteria = mean(all_percent_cover_avg_Cyanobacteria,
+                             na.rm = T),
+    Avg_Seagrass = mean(all_percent_cover_avg_Seagrass,
+                        na.rm = T),
+    Avg_Sand = mean(all_percent_cover_avg_Sand,
+                    na.rm = T),
+    Avg_Macroalgae = mean(all_percent_cover_avg_Macroalgae,
+                          na.rm = T),
+    Avg_Turf_algae = mean(all_percent_cover_avg_Turf_algae,
+                          na.rm = T),
+    Avg_Soft_coral = mean(all_percent_cover_avg_Soft_coral,
+                          na.rm = T),
+    Avg_Other_invertebrates = mean(all_percent_cover_avg_Other_invertebrates,
+                                   na.rm = T)) %>% 
+  ungroup() %>% 
+  filter(year > 1900)
+
+# Create the histogram using plotly
+benthicTimeSeriesPercBarplot <-
+  plot_ly(data = benthicSummYearCatTBL,
+          x = ~year,
+          y = ~Avg_Hard_coral,
+          type = 'bar',
+          name = "Hard coral",
+          marker = list(color = "#498fc9"),
+          height = 450,
+          hovertemplate = paste('%{fullData.name}',
+                          '<br>Year: %{x}',
+                          '<br>%{y:.1f}% cover',
+                          '<extra></extra>')) %>%
+  add_trace(y = ~Avg_Bare_substrate,
+            name = "Bare substrate",
+            marker = list(color = "#f2f3f3")) %>% 
+  add_trace(y = ~Avg_Crustose_coralline_algae,
+            name = "Crustose coralline algae",
+            marker = list(color = "#fbd7d5")) %>% 
+  add_trace(y = ~Avg_Rubble,
+            name = "Rubble",
+            marker = list(color = "#f5f6af")) %>% 
+  add_trace(y = ~Avg_Cyanobacteria,
+            name = "Cyanobacteria",
+            marker = list(color = "#870e00")) %>% 
+  add_trace(y = ~Avg_Seagrass,
+            name = "Seagrass",
+            marker = list(color = "#4d4d4d")) %>% 
+  add_trace(y = ~Avg_Sand,
+            name = "Sand",
+            marker = list(color = "#c1b180")) %>% 
+  add_trace(y = ~Avg_Macroalgae,
+            name = "Macroalgae",
+            marker = list(color = "#b2b000")) %>% 
+  add_trace(y = ~Avg_Turf_algae,
+            name = "Turf algae",
+            marker = list(color = "#d9eea8")) %>% 
+  add_trace(y = ~Avg_Soft_coral,
+            name = "Soft coral",
+            marker = list(color = "#9ce5fa")) %>% 
+  add_trace(y = ~Avg_Other_invertebrates,
+            name = "Other invertebrates",
+            marker = list(color = "#4e4e4e")) %>% 
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian',
+                                    'hoverCompareCartesian')) %>% 
+  layout(barmode = "stack",
+         bargap = 0.1,
+         yaxis = list(title = "Benthic % cover",
+                      linecolor = "black",
+                      linewidth = 2,
+                      hoverformat = '.2f',
+                      tickvals = seq(0, 100, by = 10),  # Set y-axis tick values
+                      ticktext = seq(0, 100, by = 10)),
+         xaxis = list(title = "Year",
+                      linecolor = "black",   # Set the x-axis line color to black
+                      linewidth = 2),
+         annotations = list(
+           list(x = 0, y = 1.15, text = "BENTHIC % COVER", showarrow = FALSE,
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = 0, y = 1.06,
+                text = paste0(
+                  nrow(
+                    benthicAvgTBL %>% 
+                      filter(
+                        !is.na(all_percent_cover_avg_Hard_coral))),
+                  " Surveys"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         legend = list(orientation = "h", xanchor = "center", x = 0.5, y = -0.2),
+         margin = list(t = 50, b = 75))  # Increase top margin to create more space for title and subtitle
+
+# Visualize the plot
+benthicTimeSeriesPercBarplot
+```
+
+## Stacked Single Barplot - % cover by category (single survey)
+
+Code to create a single stacked barplot showing the percent cover (y-axis), with different colors representing 11 broad level benthic categories: Hard coral, Bare substrate, Crustose coralline algae, Rubble, Cyanobacteria, Seagrass, Sand, Macroalgae, Turf algae, Soft coral, Other invertebrates. This code shows an example with a single sample event (i.e. survey) but could be adapted to apply to multiple surveys and sites. As in MERMAID Explore, this visualization also just focuses on one method - in this case benthic PIT - but could be used for others.
+
+```{r}
+#| label: Single stacked barplot - % cover by category (single survey)
+
+benthicPitSingleSeTBL <- benthicAvgTBL %>% 
+  select(project, site, benthicpit_sample_unit_count,
+         starts_with("benthicpit_percent_cover_benthic_category_avg_")) %>% 
+  filter(benthicpit_sample_unit_count > 0) %>% #Get only benthic PIT protocol
+  mutate(across(
+    starts_with("benthicpit_percent_cover_benthic_category_avg_"),
+    ~ round(.x, 1)
+  ))
+
+# Create the histogram using plotly
+benthicPitPercSingleSeBarplot <-
+  plot_ly(data = benthicPitSingleSeTBL[1,],
+          x = 1,
+          y = ~`benthicpit_percent_cover_benthic_category_avg_Hard coral`,
+          type = 'bar',
+          hovertemplate = paste('%{meta}',
+                          '<br>%{y:.1f}% cover',
+                          '<extra></extra>'),
+          name = paste0("Hard coral (",
+                        benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Hard coral`[1],
+                        "%)"),
+          meta = "Hard coral",
+          marker = list(color = "#498fc9"),
+          height = 450,
+          width = 500) %>%
+  add_trace(y = ~`benthicpit_percent_cover_benthic_category_avg_Bare substrate`,
+            name = paste0("Bare substrate (",
+                          benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Bare substrate`[1],
+                          "%)"),
+            meta = "Bare substrate",
+            marker = list(color = "#f2f3f3")) %>% 
+  add_trace(y = ~`benthicpit_percent_cover_benthic_category_avg_Crustose coralline algae`,
+            name = paste0("Crustose coralline algae (",
+                          benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Crustose coralline algae`[1],
+                          "%)"),
+            meta = "Crustose coralline algae",
+            marker = list(color = "#fbd7d5")) %>% 
+  add_trace(y = ~benthicpit_percent_cover_benthic_category_avg_Rubble,
+            name = paste0("Rubble (",
+                          benthicPitSingleSeTBL$benthicpit_percent_cover_benthic_category_avg_Rubble[1],
+                          "%)"),
+            meta = "Rubble",
+            marker = list(color = "#f5f6af")) %>% 
+  add_trace(y = ~benthicpit_percent_cover_benthic_category_avg_Cyanobacteria,
+            name = paste0("Cyanobacteria (",
+                          benthicPitSingleSeTBL$benthicpit_percent_cover_benthic_category_avg_Cyanobacteria[1],
+                          "%)"),
+            meta = "Cyanobacteria",
+            marker = list(color = "#870e00")) %>% 
+  add_trace(y = ~benthicpit_percent_cover_benthic_category_avg_Seagrass,
+            name = paste0("Seagrass (",
+                          benthicPitSingleSeTBL$benthicpit_percent_cover_benthic_category_avg_Seagrass[1],
+                          "%)"),
+            meta = "Seagrass",
+            marker = list(color = "#4d4d4d")) %>% 
+  add_trace(y = ~benthicpit_percent_cover_benthic_category_avg_Sand,
+            name = paste0("Sand (",
+                          benthicPitSingleSeTBL$benthicpit_percent_cover_benthic_category_avg_Sand[1],
+                          "%)"),
+            meta = "Sand",
+            marker = list(color = "#c1b180")) %>% 
+  add_trace(y = ~benthicpit_percent_cover_benthic_category_avg_Macroalgae,
+            name = paste0("Macroalgae (",
+                          benthicPitSingleSeTBL$benthicpit_percent_cover_benthic_category_avg_Macroalgae[1],
+                          "%)"),
+            meta = "Macroalgae",
+            marker = list(color = "#b2b000")) %>% 
+  add_trace(y = ~`benthicpit_percent_cover_benthic_category_avg_Turf algae`,
+            name = paste0("Turf algae (",
+                          benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Turf algae`[1],
+                          "%)"),
+            meta = "Turf algae",
+            marker = list(color = "#d9eea8")) %>% 
+  add_trace(y = ~`benthicpit_percent_cover_benthic_category_avg_Soft coral`,
+            name = paste0("Soft coral (",
+                          benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Soft coral`[1],
+                          "%)"),
+            meta = "Soft coral",
+            marker = list(color = "#9ce5fa")) %>% 
+  add_trace(y = ~`benthicpit_percent_cover_benthic_category_avg_Other invertebrates`,
+            name = paste0("Other invertebrates (",
+                          benthicPitSingleSeTBL$`benthicpit_percent_cover_benthic_category_avg_Other invertebrates`[1],
+                          "%)"),
+            meta = "Other invertebrates",
+            marker = list(color = "#4e4e4e")) %>% 
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian',
+                                    'hoverCompareCartesian')) %>% 
+  layout(barmode = "stack",
+         bargap = 0,
+         yaxis = list(title = "",
+                      linecolor = "black",
+                      linewidth = 2,
+                      range = c(0,100),
+                      tickvals = seq(0, 100, by = 10),  # Set y-axis tick values
+                      ticksuffix = "%"),
+         xaxis = list(title = "",
+                      linecolor = "black",   # Set the x-axis line color to black
+                      linewidth = 2,
+                      showticklabels=FALSE),
+         annotations = list(
+           list(x = 0, y = 1.15, text = "BENTHIC % COVER (PIT)", showarrow = FALSE,
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = 0, y = 1.08,
+                text = paste(benthicPitSingleSeTBL$benthicpit_sample_unit_count[1],
+                             " Sample units"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         margin = list(t = 50, b = 75))
+
+# Visualize the plot
+benthicPitPercSingleSeBarplot
+```
